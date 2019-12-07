@@ -504,7 +504,7 @@ private:
                 H[n1][n1 - 1] = 0.0;
                 H[n1][n1] = 1.0;
                 for (int i = n1 - 2; i >= 0; i--) {
-                    double ra, sa, vr, vi;
+                    double ra, sa;
                     ra = 0.0;
                     sa = 0.0;
                     for (int j = l; j <= n1; j++) {
@@ -529,8 +529,8 @@ private:
 
                             x = H[i][i + 1];
                             y = H[i + 1][i];
-                            vr = (d[i] - p) * (d[i] - p) + e[i] * e[i] - q * q;
-                            vi = (d[i] - p) * 2.0 * q;
+                            double vr = (d[i] - p) * (d[i] - p) + e[i] * e[i] - q * q;
+                            double vi = (d[i] - p) * 2.0 * q;
                             if (vr == 0.0 && vi == 0.0) {
                                 vr = eps * norm * (std::abs(w) + std::abs(q) + std::abs(x)
                                                    + std::abs(y) + std::abs(z));
@@ -720,7 +720,7 @@ private:
 
 public:
     EigenvalueDecomposition()
-    : n(0) { }
+    : n(0), cdivr(0), cdivi(0), d(0), e(0), ort(0), V(0), H(0) {}
 
     // Initializes & computes the Eigenvalue Decomposition for a general matrix
     // given in src. This function is a port of the EigenvalueSolver in JAMA,

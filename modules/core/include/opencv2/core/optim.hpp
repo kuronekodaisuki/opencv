@@ -39,8 +39,8 @@
 //
 //M*/
 
-#ifndef __OPENCV_OPTIM_HPP__
-#define __OPENCV_OPTIM_HPP__
+#ifndef OPENCV_OPTIM_HPP
+#define OPENCV_OPTIM_HPP
 
 #include "opencv2/core.hpp"
 
@@ -63,15 +63,17 @@ public:
     class CV_EXPORTS Function
     {
     public:
-       virtual ~Function() {}
-       virtual double calc(const double* x) const = 0;
-       virtual void getGradient(const double* /*x*/,double* /*grad*/) {}
+        virtual ~Function() {}
+        virtual int getDims() const = 0;
+        virtual double getGradientEps() const;
+        virtual double calc(const double* x) const = 0;
+        virtual void getGradient(const double* x,double* grad);
     };
 
     /** @brief Getter for the optimized function.
 
     The optimized function is represented by Function interface, which requires derivatives to
-    implement the sole method calc(double*) to evaluate the function.
+    implement the calc(double*) and getDim() methods to evaluate the function.
 
     @return Smart-pointer to an object that implements Function interface - it represents the
     function that is being optimized. It can be empty, if no function was given so far.
@@ -113,7 +115,7 @@ public:
     always sensible) will be used.
 
     @param x The initial point, that will become a centroid of an initial simplex. After the algorithm
-    will terminate, it will be setted to the point where the algorithm stops, the point of possible
+    will terminate, it will be set to the point where the algorithm stops, the point of possible
     minimum.
     @return The value of a function at the point found.
      */
@@ -217,10 +219,10 @@ converge to it. Another obvious restriction is that it should be possible to com
 a function at any point, thus it is preferable to have analytic expression for gradient and
 computational burden should be born by the user.
 
-The latter responsibility is accompilished via the getGradient method of a
+The latter responsibility is accomplished via the getGradient method of a
 MinProblemSolver::Function interface (which represents function being optimized). This method takes
 point a point in *n*-dimensional space (first argument represents the array of coordinates of that
-point) and comput its gradient (it should be stored in the second argument as an array).
+point) and compute its gradient (it should be stored in the second argument as an array).
 
 @note class ConjGradSolver thus does not add any new methods to the basic MinProblemSolver interface.
 
@@ -274,7 +276,7 @@ column vector and \f$x\f$ is an arbitrary `n`-by-`1` column vector, which satisf
 
 Simplex algorithm is one of many algorithms that are designed to handle this sort of problems
 efficiently. Although it is not optimal in theoretical sense (there exist algorithms that can solve
-any problem written as above in polynomial type, while simplex method degenerates to exponential
+any problem written as above in polynomial time, while simplex method degenerates to exponential
 time for some special cases), it is well-studied, easy to implement and is shown to work well for
 real-life purposes.
 
@@ -286,12 +288,12 @@ Bland's rule <http://en.wikipedia.org/wiki/Bland%27s_rule> is used to prevent cy
 contain 32- or 64-bit floating point numbers. As a convenience, column-vector may be also submitted,
 in the latter case it is understood to correspond to \f$c^T\f$.
 @param Constr `m`-by-`n+1` matrix, whose rightmost column corresponds to \f$b\f$ in formulation above
-and the remaining to \f$A\f$. It should containt 32- or 64-bit floating point numbers.
+and the remaining to \f$A\f$. It should contain 32- or 64-bit floating point numbers.
 @param z The solution will be returned here as a column-vector - it corresponds to \f$c\f$ in the
 formulation above. It will contain 64-bit floating point numbers.
 @return One of cv::SolveLPResult
  */
-CV_EXPORTS_W int solveLP(const Mat& Func, const Mat& Constr, Mat& z);
+CV_EXPORTS_W int solveLP(InputArray Func, InputArray Constr, OutputArray z);
 
 //! @}
 

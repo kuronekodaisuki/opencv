@@ -46,12 +46,12 @@
 #include <fstream>
 #include <stdlib.h>
 
-#include "fast_score.hpp"
+#include "agast_score.hpp"
 
 namespace cv
 {
 
-class BRISK_Impl : public BRISK
+class BRISK_Impl CV_FINAL : public BRISK
 {
 public:
     explicit BRISK_Impl(int thresh=30, int octaves=3, float patternScale=1.0f);
@@ -59,21 +59,45 @@ public:
     explicit BRISK_Impl(const std::vector<float> &radiusList, const std::vector<int> &numberList,
         float dMax=5.85f, float dMin=8.2f, const std::vector<int> indexChange=std::vector<int>());
 
+    explicit BRISK_Impl(int thresh, int octaves, const std::vector<float> &radiusList,
+        const std::vector<int> &numberList, float dMax=5.85f, float dMin=8.2f,
+        const std::vector<int> indexChange=std::vector<int>());
+
     virtual ~BRISK_Impl();
 
-    int descriptorSize() const
+    int descriptorSize() const CV_OVERRIDE
     {
         return strings_;
     }
 
-    int descriptorType() const
+    int descriptorType() const CV_OVERRIDE
     {
         return CV_8U;
     }
 
-    int defaultNorm() const
+    int defaultNorm() const CV_OVERRIDE
     {
         return NORM_HAMMING;
+    }
+
+    virtual void setThreshold(int threshold_in) CV_OVERRIDE
+    {
+        threshold = threshold_in;
+    }
+
+    virtual int getThreshold() const CV_OVERRIDE
+    {
+        return threshold;
+    }
+
+    virtual void setOctaves(int octaves_in) CV_OVERRIDE
+    {
+        octaves = octaves_in;
+    }
+
+    virtual int getOctaves() const CV_OVERRIDE
+    {
+        return octaves;
     }
 
     // call this to generate the kernel:
@@ -86,7 +110,7 @@ public:
     void detectAndCompute( InputArray image, InputArray mask,
                      CV_OUT std::vector<KeyPoint>& keypoints,
                      OutputArray descriptors,
-                     bool useProvidedKeypoints );
+                     bool useProvidedKeypoints ) CV_OVERRIDE;
 
 protected:
 
@@ -139,15 +163,19 @@ protected:
 
     // general
     static const float basicSize_;
+
+private:
+    BRISK_Impl(const BRISK_Impl &); // copy disabled
+    BRISK_Impl& operator=(const BRISK_Impl &); // assign disabled
 };
 
 
 // a layer in the Brisk detector pyramid
-class CV_EXPORTS BriskLayer
+class BriskLayer
 {
 public:
   // constructor arguments
-  struct CV_EXPORTS CommonParams
+  struct CommonParams
   {
     static const int HALFSAMPLE = 0;
     static const int TWOTHIRDSAMPLE = 1;
@@ -157,7 +185,7 @@ public:
   // derive a layer
   BriskLayer(const BriskLayer& layer, int mode);
 
-  // Fast/Agast without non-max suppression
+  // Agast without non-max suppression
   void
   getAgastPoints(int threshold, std::vector<cv::KeyPoint>& keypoints);
 
@@ -204,18 +232,18 @@ private:
   value(const cv::Mat& mat, float xf, float yf, float scale) const;
   // the image
   cv::Mat img_;
-  // its Fast scores
+  // its Agast scores
   cv::Mat_<uchar> scores_;
   // coordinate transformation
   float scale_;
   float offset_;
   // agast
-  cv::Ptr<cv::FastFeatureDetector> fast_9_16_;
+  cv::Ptr<cv::AgastFeatureDetector> oast_9_16_;
   int pixel_5_8_[25];
   int pixel_9_16_[25];
 };
 
-class CV_EXPORTS BriskScaleSpace
+class BriskScaleSpace
 {
 public:
   // construct telling the octaves number:
@@ -317,6 +345,18 @@ BRISK_Impl::BRISK_Impl(const std::vector<float> &radiusList,
   generateKernel(radiusList, numberList, dMax, dMin, indexChange);
   threshold = 20;
   octaves = 3;
+}
+
+BRISK_Impl::BRISK_Impl(int thresh,
+                       int octaves_in,
+                       const std::vector<float> &radiusList,
+                       const std::vector<int> &numberList,
+                       float dMax, float dMin,
+                       const std::vector<int> indexChange)
+{
+  generateKernel(radiusList, numberList, dMax, dMin, indexChange);
+  threshold = thresh;
+  octaves = octaves_in;
 }
 
 void
@@ -486,6 +526,7 @@ BRISK_Impl::smoothedIntensity(const cv::Mat& image, const cv::Mat& integral, con
   // scaling:
   const int scaling = (int)(4194304.0 / area);
   const int scaling2 = int(float(scaling) * area / 1024.0);
+  CV_Assert(scaling2 != 0);
 
   // the integral image is larger:
   const int integralcols = imagecols + 1;
@@ -618,8 +659,6 @@ BRISK_Impl::detectAndCompute( InputArray _image, InputArray _mask, std::vector<K
                               OutputArray _descriptors, bool useProvidedKeypoints)
 {
   bool doOrientation=true;
-  if (useProvidedKeypoints)
-    doOrientation = false;
 
   // If the user specified cv::noArray(), this will yield false. Otherwise it will return true.
   bool doDescriptors = _descriptors.needed();
@@ -705,7 +744,6 @@ BRISK_Impl::computeDescriptorsAndOrOrientation(InputArray _image, InputArray _ma
   {
     cv::KeyPoint& kp = keypoints[k];
     const int& scale = kscales[k];
-    int* pvalues = _values;
     const float& x = kp.pt.x;
     const float& y = kp.pt.y;
 
@@ -714,7 +752,7 @@ BRISK_Impl::computeDescriptorsAndOrOrientation(InputArray _image, InputArray _ma
         // get the gray values in the unrotated pattern
         for (unsigned int i = 0; i < points_; i++)
         {
-          *(pvalues++) = smoothedIntensity(image, _integral, x, y, scale, 0, i);
+            _values[i] = smoothedIntensity(image, _integral, x, y, scale, 0, i);
         }
 
         int direction0 = 0;
@@ -723,6 +761,7 @@ BRISK_Impl::computeDescriptorsAndOrOrientation(InputArray _image, InputArray _ma
         const BriskLongPair* max = longPairs_ + noLongPairs_;
         for (BriskLongPair* iter = longPairs_; iter < max; ++iter)
         {
+          CV_Assert(iter->i < points_ && iter->j < points_);
           t1 = *(_values + iter->i);
           t2 = *(_values + iter->j);
           const int delta_t = (t1 - t2);
@@ -733,8 +772,12 @@ BRISK_Impl::computeDescriptorsAndOrOrientation(InputArray _image, InputArray _ma
           direction1 += tmp1;
         }
         kp.angle = (float)(atan2((float) direction1, (float) direction0) / CV_PI * 180.0);
-        if (kp.angle < 0)
-          kp.angle += 360.f;
+
+        if (!doDescriptors)
+        {
+          if (kp.angle < 0)
+            kp.angle += 360.f;
+        }
     }
 
     if (!doDescriptors)
@@ -743,7 +786,7 @@ BRISK_Impl::computeDescriptorsAndOrOrientation(InputArray _image, InputArray _ma
     int theta;
     if (kp.angle==-1)
     {
-        // don't compute the gradient direction, just assign a rotation of 0°
+        // don't compute the gradient direction, just assign a rotation of 0
         theta = 0;
     }
     else
@@ -755,16 +798,18 @@ BRISK_Impl::computeDescriptorsAndOrOrientation(InputArray _image, InputArray _ma
           theta -= n_rot_;
     }
 
+    if (kp.angle < 0)
+      kp.angle += 360.f;
+
     // now also extract the stuff for the actual direction:
     // let us compute the smoothed values
     int shifter = 0;
 
     //unsigned int mean=0;
-    pvalues = _values;
     // get the gray values in the rotated pattern
     for (unsigned int i = 0; i < points_; i++)
     {
-      *(pvalues++) = smoothedIntensity(image, _integral, x, y, scale, theta, i);
+        _values[i] = smoothedIntensity(image, _integral, x, y, scale, theta, i);
     }
 
     // now iterate through all the pairings
@@ -772,6 +817,7 @@ BRISK_Impl::computeDescriptorsAndOrOrientation(InputArray _image, InputArray _ma
     const BriskShortPair* max = shortPairs_ + noShortPairs_;
     for (BriskShortPair* iter = shortPairs_; iter < max; ++iter)
     {
+      CV_Assert(iter->i < points_ && iter->j < points_);
       t1 = *(_values + iter->i);
       t2 = *(_values + iter->j);
       if (t1 > t2)
@@ -867,7 +913,7 @@ BriskScaleSpace::getKeypoints(const int threshold_, std::vector<cv::KeyPoint>& k
   std::vector<std::vector<cv::KeyPoint> > agastPoints;
   agastPoints.resize(layers_);
 
-  // go through the octaves and intra layers and calculate fast corner scores:
+  // go through the octaves and intra layers and calculate agast corner scores:
   for (int i = 0; i < layers_; i++)
   {
     // call OAST16_9 without nms
@@ -1210,7 +1256,6 @@ BriskScaleSpace::isMax2D(const int layer, const int x_layer, const int y_layer)
   {
     // in this case, we have to analyze the situation more carefully:
     // the values are gaussian blurred and then we really decide
-    data = scores.ptr() + y_layer * scorescols + x_layer;
     int smoothedcenter = 4 * center + 2 * (s_10 + s10 + s0_1 + s01) + s_1_1 + s1_1 + s_11 + s11;
     for (unsigned int i = 0; i < deltasize; i += 2)
     {
@@ -1286,8 +1331,7 @@ BriskScaleSpace::refine3D(const int layer, const int x_layer, const int y_layer,
       int s_2_2 = l.getAgastScore_5_8(x_layer + 1, y_layer + 1, 1);
       max_below = std::max(s_2_2, max_below);
 
-      max_below_float = subpixel2D(s_0_0, s_0_1, s_0_2, s_1_0, s_1_1, s_1_2, s_2_0, s_2_1, s_2_2, delta_x_below,
-                                   delta_y_below);
+      subpixel2D(s_0_0, s_0_1, s_0_2, s_1_0, s_1_1, s_1_2, s_2_0, s_2_1, s_2_2, delta_x_below, delta_y_below);
       max_below_float = (float)max_below;
     }
     else
@@ -2041,13 +2085,13 @@ BriskScaleSpace::subpixel2D(const int s_0_0, const int s_0_1, const int s_0_2, c
     if (max1 > max2)
     {
       delta_x = delta_x1;
-      delta_y = delta_x1;
+      delta_y = delta_y1;
       return max1;
     }
     else
     {
       delta_x = delta_x2;
-      delta_y = delta_x2;
+      delta_y = delta_y2;
       return max2;
     }
   }
@@ -2067,9 +2111,9 @@ BriskLayer::BriskLayer(const cv::Mat& img_in, float scale_in, float offset_in)
   scale_ = scale_in;
   offset_ = offset_in;
   // create an agast detector
-  fast_9_16_ = FastFeatureDetector::create(1, true, FastFeatureDetector::TYPE_9_16);
-  makeOffsets(pixel_5_8_, (int)img_.step, 8);
-  makeOffsets(pixel_9_16_, (int)img_.step, 16);
+  oast_9_16_ = AgastFeatureDetector::create(1, false, AgastFeatureDetector::OAST_9_16);
+  makeAgastOffsets(pixel_5_8_, (int)img_.step, AgastFeatureDetector::AGAST_5_8);
+  makeAgastOffsets(pixel_9_16_, (int)img_.step, AgastFeatureDetector::OAST_9_16);
 }
 // derive a layer
 BriskLayer::BriskLayer(const BriskLayer& layer, int mode)
@@ -2089,18 +2133,18 @@ BriskLayer::BriskLayer(const BriskLayer& layer, int mode)
     offset_ = 0.5f * scale_ - 0.5f;
   }
   scores_ = cv::Mat::zeros(img_.rows, img_.cols, CV_8U);
-  fast_9_16_ = FastFeatureDetector::create(1, false, FastFeatureDetector::TYPE_9_16);
-  makeOffsets(pixel_5_8_, (int)img_.step, 8);
-  makeOffsets(pixel_9_16_, (int)img_.step, 16);
+  oast_9_16_ = AgastFeatureDetector::create(1, false, AgastFeatureDetector::OAST_9_16);
+  makeAgastOffsets(pixel_5_8_, (int)img_.step, AgastFeatureDetector::AGAST_5_8);
+  makeAgastOffsets(pixel_9_16_, (int)img_.step, AgastFeatureDetector::OAST_9_16);
 }
 
-// Fast/Agast
+// Agast
 // wraps the agast class
 void
 BriskLayer::getAgastPoints(int threshold, std::vector<KeyPoint>& keypoints)
 {
-  fast_9_16_->setThreshold(threshold);
-  fast_9_16_->detect(img_, keypoints);
+  oast_9_16_->setThreshold(threshold);
+  oast_9_16_->detect(img_, keypoints);
 
   // also write scores
   const size_t num = keypoints.size();
@@ -2121,7 +2165,7 @@ BriskLayer::getAgastScore(int x, int y, int threshold) const
   {
     return score;
   }
-  score = (uchar)cornerScore<16>(&img_.at<uchar>(y, x), pixel_9_16_, threshold - 1);
+  score = (uchar)agast_cornerScore<AgastFeatureDetector::OAST_9_16>(&img_.at<uchar>(y, x), pixel_9_16_, threshold - 1);
   if (score < threshold)
     score = 0;
   return score;
@@ -2134,7 +2178,7 @@ BriskLayer::getAgastScore_5_8(int x, int y, int threshold) const
     return 0;
   if (x >= img_.cols - 2 || y >= img_.rows - 2)
     return 0;
-  int score = cornerScore<8>(&img_.at<uchar>(y, x), pixel_5_8_, threshold - 1);
+  int score = agast_cornerScore<AgastFeatureDetector::AGAST_5_8>(&img_.at<uchar>(y, x), pixel_5_8_, threshold - 1);
   if (score < threshold)
     score = 0;
   return score;
@@ -2213,6 +2257,7 @@ BriskLayer::value(const cv::Mat& mat, float xf, float yf, float scale_in) const
   // scaling:
   const int scaling = (int)(4194304.0f / area);
   const int scaling2 = (int)(float(scaling) * area / 1024.0f);
+  CV_Assert(scaling2 != 0);
 
   // calculate borders
   const float x_1 = xf - sigma_half;
@@ -2311,6 +2356,18 @@ Ptr<BRISK> BRISK::create(const std::vector<float> &radiusList, const std::vector
                          float dMax, float dMin, const std::vector<int>& indexChange)
 {
     return makePtr<BRISK_Impl>(radiusList, numberList, dMax, dMin, indexChange);
+}
+
+Ptr<BRISK> BRISK::create(int thresh, int octaves, const std::vector<float> &radiusList,
+                         const std::vector<int> &numberList, float dMax, float dMin,
+                         const std::vector<int>& indexChange)
+{
+    return makePtr<BRISK_Impl>(thresh, octaves, radiusList, numberList, dMax, dMin, indexChange);
+}
+
+String BRISK::getDefaultName() const
+{
+    return (Feature2D::getDefaultName() + ".BRISK");
 }
 
 }

@@ -50,4 +50,12 @@ Now we will learn how to write a simple Hello World Application in Xcode using O
 Output
 ------
 
-![](images/output.png)
+![](images/ios_hello_output.png)
+
+Changes for XCode5+ and iOS8+
+-----------------------------
+
+With the newer XCode and iOS versions you need to watch out for some specific details
+
+-   The *.m file in your project should be renamed to *.mm.
+-   You have to manually include AssetsLibrary.framework into your project, which is not done anymore by default.

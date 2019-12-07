@@ -25,7 +25,7 @@ components:
     vector responses.
 -   Another optional component is the mask of missing measurements. Most algorithms require all the
     components in all the training samples be valid, but some other algorithms, such as decision
-    tress, can handle the cases of missing measurements.
+    trees, can handle the cases of missing measurements.
 -   In the case of classification problem user may want to give different weights to different
     classes. This is useful, for example, when:
     -   user wants to shift prediction accuracy towards lower false-alarm rate or higher hit-rate.
@@ -433,7 +433,7 @@ Logistic Regression {#ml_intro_lr}
 ML implements logistic regression, which is a probabilistic classification technique. Logistic
 Regression is a binary classification algorithm which is closely related to Support Vector Machines
 (SVM). Like SVM, Logistic Regression can be extended to work on multi-class classification problems
-like digit recognition (i.e. recognizing digitis like 0,1 2, 3,... from the given images). This
+like digit recognition (i.e. recognizing digits like 0,1 2, 3,... from the given images). This
 version of Logistic Regression supports both binary and multi-class classifications (for multi-class
 it creates a multiple 2-class classifiers). In order to train the logistic regression classifier,
 Batch Gradient Descent and Mini-Batch Gradient Descent algorithms are used (see
@@ -441,48 +441,41 @@ Batch Gradient Descent and Mini-Batch Gradient Descent algorithms are used (see
 discriminative classifier (see <http://www.cs.cmu.edu/~tom/NewChapters.html> for more details).
 Logistic Regression is implemented as a C++ class in LogisticRegression.
 
-In Logistic Regression, we try to optimize the training paramater \f$\theta\f$ such that the
-hypothesis \f$0 \leq h_\theta(x) \leq 1\f$ is acheived. We have \f$h_\theta(x) = g(h_\theta(x))\f$
+In Logistic Regression, we try to optimize the training parameter \f$\theta\f$ such that the
+hypothesis \f$0 \leq h_\theta(x) \leq 1\f$ is achieved. We have \f$h_\theta(x) = g(h_\theta(x))\f$
 and \f$g(z) = \frac{1}{1+e^{-z}}\f$ as the logistic or sigmoid function. The term "Logistic" in
 Logistic Regression refers to this function. For given data of a binary classification problem of
 classes 0 and 1, one can determine that the given data instance belongs to class 1 if \f$h_\theta(x)
 \geq 0.5\f$ or class 0 if \f$h_\theta(x) < 0.5\f$ .
 
 In Logistic Regression, choosing the right parameters is of utmost importance for reducing the
-training error and ensuring high training accuracy. cv::ml::LogisticRegression::Params is the
-structure that defines parameters that are required to train a Logistic Regression classifier.
+training error and ensuring high training accuracy:
 
-The learning rate is determined by cv::ml::LogisticRegression::Params.alpha. It determines how fast
-we approach the solution. It is a positive real number.
+-   The learning rate can be set with @ref cv::ml::LogisticRegression::setLearningRate "setLearningRate"
+    method. It determines how fast we approach the solution. It is a positive real number.
 
-Optimization algorithms like Batch Gradient Descent and Mini-Batch Gradient Descent are supported in
-LogisticRegression. It is important that we mention the number of iterations these optimization
-algorithms have to run. The number of iterations are mentioned by
-cv::ml::LogisticRegression::Params.num_iters. The number of iterations can be thought as number of
-steps taken and learning rate specifies if it is a long step or a short step. These two parameters
-define how fast we arrive at a possible solution.
+-   Optimization algorithms like Batch Gradient Descent and Mini-Batch Gradient Descent are supported
+    in LogisticRegression. It is important that we mention the number of iterations these optimization
+    algorithms have to run. The number of iterations can be set with @ref
+    cv::ml::LogisticRegression::setIterations "setIterations". This parameter can be thought
+    as number of steps taken and learning rate specifies if it is a long step or a short step. This
+    and previous parameter define how fast we arrive at a possible solution.
 
-In order to compensate for overfitting regularization is performed, which can be enabled by setting
-cv::ml::LogisticRegression::Params.regularized to a positive integer (greater than zero). One can
-specify what kind of regularization has to be performed by setting
-cv::ml::LogisticRegression::Params.norm to REG_L1 or REG_L2 values.
+-   In order to compensate for overfitting regularization is performed, which can be enabled with
+    @ref cv::ml::LogisticRegression::setRegularization "setRegularization". One can specify what
+    kind of regularization has to be performed by passing one of @ref
+    cv::ml::LogisticRegression::RegKinds "regularization kinds" to this method.
 
-LogisticRegression provides a choice of 2 training methods with Batch Gradient Descent or the Mini-
-Batch Gradient Descent. To specify this, set cv::ml::LogisticRegression::Params::train_method to
-either BATCH or MINI_BATCH. If training method is set to MINI_BATCH, the size of the mini batch has
-to be to a postive integer using cv::ml::LogisticRegression::Params::mini_batch_size.
+-   Logistic regression implementation provides a choice of 2 training methods with Batch Gradient
+    Descent or the MiniBatch Gradient Descent. To specify this, call @ref
+    cv::ml::LogisticRegression::setTrainMethod "setTrainMethod" with either @ref
+    cv::ml::LogisticRegression::BATCH "LogisticRegression::BATCH" or @ref
+    cv::ml::LogisticRegression::MINI_BATCH "LogisticRegression::MINI_BATCH". If training method is
+    set to @ref cv::ml::LogisticRegression::MINI_BATCH "MINI_BATCH", the size of the mini batch has
+    to be to a positive integer set with @ref cv::ml::LogisticRegression::setMiniBatchSize
+    "setMiniBatchSize".
 
-A sample set of training parameters for the Logistic Regression classifier can be initialized as
-follows:
-@code{.cpp}
-using namespace cv::ml;
-LogisticRegression::Params params;
-params.alpha = 0.5;
-params.num_iters = 10000;
-params.norm = LogisticRegression::REG_L2;
-params.regularized = 1;
-params.train_method = LogisticRegression::MINI_BATCH;
-params.mini_batch_size = 10;
-@endcode
+A sample set of training parameters for the Logistic Regression classifier can be initialized as follows:
+@snippet samples/cpp/logistic_regression.cpp init
 
 @sa cv::ml::LogisticRegression

@@ -37,6 +37,8 @@ the use of this software, even if advised of the possibility of such damage.
 #ifndef __OPENCV_IMGPROC_FILTERENGINE_HPP__
 #define __OPENCV_IMGPROC_FILTERENGINE_HPP__
 
+#include "opencv2/imgproc.hpp"
+
 namespace cv
 {
 
@@ -66,7 +68,7 @@ public:
     BaseRowFilter();
     //! the destructor
     virtual ~BaseRowFilter();
-    //! the filtering operator. Must be overrided in the derived classes. The horizontal border interpolation is done outside of the class.
+    //! the filtering operator. Must be overridden in the derived classes. The horizontal border interpolation is done outside of the class.
     virtual void operator()(const uchar* src, uchar* dst, int width, int cn) = 0;
 
     int ksize;
@@ -94,7 +96,7 @@ public:
     BaseColumnFilter();
     //! the destructor
     virtual ~BaseColumnFilter();
-    //! the filtering operator. Must be overrided in the derived classes. The vertical border interpolation is done outside of the class.
+    //! the filtering operator. Must be overridden in the derived classes. The vertical border interpolation is done outside of the class.
     virtual void operator()(const uchar** src, uchar* dst, int dststep, int dstcount, int width) = 0;
     //! resets the internal buffers, if any
     virtual void reset();
@@ -182,7 +184,7 @@ public:
      Mat Iyy( DELTA + kd.rows - 1, src.cols, dst.type() );
 
      // inside the loop we always pass DELTA rows to the filter
-     // (note that the "proceed" method takes care of possibe overflow, since
+     // (note that the "proceed" method takes care of possible overflow, since
      // it was given the actual image height in the "start" method)
      // on output we can get:
      //  * < DELTA rows (the initial buffer accumulation stage)
@@ -228,19 +230,17 @@ public:
               int _rowBorderType = BORDER_REPLICATE,
               int _columnBorderType = -1,
               const Scalar& _borderValue = Scalar());
+
     //! starts filtering of the specified ROI of an image of size wholeSize.
-    virtual int start(Size wholeSize, Rect roi, int maxBufRows = -1);
+    virtual int start(const cv::Size &wholeSize, const cv::Size &sz, const cv::Point &ofs);
     //! starts filtering of the specified ROI of the specified image.
-    virtual int start(const Mat& src, const Rect& srcRoi = Rect(0,0,-1,-1),
-                      bool isolated = false, int maxBufRows = -1);
+    virtual int start(const Mat& src, const cv::Size &wsz, const cv::Point &ofs);
     //! processes the next srcCount rows of the image.
     virtual int proceed(const uchar* src, int srcStep, int srcCount,
                         uchar* dst, int dstStep);
     //! applies filter to the specified ROI of the image. if srcRoi=(0,0,-1,-1), the whole image is filtered.
-    virtual void apply( const Mat& src, Mat& dst,
-                        const Rect& srcRoi = Rect(0,0,-1,-1),
-                        Point dstOfs = Point(0,0),
-                        bool isolated = false);
+    virtual void apply(const Mat& src, Mat& dst, const cv::Size &wsz, const cv::Point &ofs);
+
     //! returns true if the filter is separable
     bool isSeparable() const { return !filter2D; }
     //! returns the number
@@ -366,10 +366,21 @@ static inline Point normalizeAnchor( Point anchor, Size ksize )
 
 void preprocess2DKernel( const Mat& kernel, std::vector<Point>& coords, std::vector<uchar>& coeffs );
 void crossCorr( const Mat& src, const Mat& templ, Mat& dst,
-               Size corrsize, int ctype,
                Point anchor=Point(0,0), double delta=0,
                int borderType=BORDER_REFLECT_101 );
 
+
 }
+
+#ifdef HAVE_IPP_IW
+static inline bool ippiCheckAnchor(cv::Point anchor, cv::Size ksize)
+{
+    anchor = cv::normalizeAnchor(anchor, ksize);
+    if(anchor.x != ((ksize.width-1)/2) || anchor.y != ((ksize.height-1)/2))
+        return 0;
+    else
+        return 1;
+}
+#endif
 
 #endif

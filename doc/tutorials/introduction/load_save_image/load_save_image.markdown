@@ -28,7 +28,7 @@ int main( int argc, char** argv )
  char* imageName = argv[1];
 
  Mat image;
- image = imread( imageName, 1 );
+ image = imread( imageName, IMREAD_COLOR );
 
  if( argc != 2 || !image.data )
  {
@@ -56,7 +56,7 @@ Explanation
 -----------
 
 -#  We begin by loading an image using @ref cv::imread , located in the path given by *imageName*.
-    For this example, assume you are loading a RGB image.
+    For this example, assume you are loading a BGR image.
 -#  Now we are going to convert our image from BGR to Grayscale format. OpenCV has a really nice
     function to do this kind of transformations:
     @code{.cpp}
@@ -71,7 +71,7 @@ Explanation
         order in case of color images).
 
 -#  So now we have our new *gray_image* and want to save it on disk (otherwise it will get lost
-    after the program ends). To save it, we will use a function analagous to @ref cv::imread : @ref
+    after the program ends). To save it, we will use a function analogous to @ref cv::imread : @ref
     cv::imwrite
     @code{.cpp}
     imwrite( "../../images/Gray_Image.jpg", gray_image );

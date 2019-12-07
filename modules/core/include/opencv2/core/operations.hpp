@@ -12,6 +12,8 @@
 //
 // Copyright (C) 2000-2008, Intel Corporation, all rights reserved.
 // Copyright (C) 2009, Willow Garage Inc., all rights reserved.
+// Copyright (C) 2013, OpenCV Foundation, all rights reserved.
+// Copyright (C) 2015, Itseez Inc., all rights reserved.
 // Third party copyrights are property of their respective owners.
 //
 // Redistribution and use in source and binary forms, with or without modification,
@@ -40,14 +42,24 @@
 //
 //M*/
 
-#ifndef __OPENCV_CORE_OPERATIONS_HPP__
-#define __OPENCV_CORE_OPERATIONS_HPP__
+#ifndef OPENCV_CORE_OPERATIONS_HPP
+#define OPENCV_CORE_OPERATIONS_HPP
 
 #ifndef __cplusplus
 #  error operations.hpp header must be compiled as C++
 #endif
 
 #include <cstdio>
+
+#if defined(__GNUC__) || defined(__clang__) // at least GCC 3.1+, clang 3.5+
+#  if defined(__MINGW_PRINTF_FORMAT)  // https://sourceforge.net/p/mingw-w64/wiki2/gnu%20printf/.
+#    define CV_FORMAT_PRINTF(string_idx, first_to_check) __attribute__ ((format (__MINGW_PRINTF_FORMAT, string_idx, first_to_check)))
+#  else
+#    define CV_FORMAT_PRINTF(string_idx, first_to_check) __attribute__ ((format (printf, string_idx, first_to_check)))
+#  endif
+#else
+#  define CV_FORMAT_PRINTF(A, B)
+#endif
 
 //! @cond IGNORED
 
@@ -59,29 +71,44 @@ namespace cv
 namespace internal
 {
 
-template<typename _Tp, int m> struct Matx_FastInvOp
+template<typename _Tp, int m, int n> struct Matx_FastInvOp
 {
-    bool operator()(const Matx<_Tp, m, m>& a, Matx<_Tp, m, m>& b, int method) const
+    bool operator()(const Matx<_Tp, m, n>& a, Matx<_Tp, n, m>& b, int method) const
     {
-        Matx<_Tp, m, m> temp = a;
-
-        // assume that b is all 0's on input => make it a unity matrix
-        for( int i = 0; i < m; i++ )
-            b(i, i) = (_Tp)1;
-
-        if( method == DECOMP_CHOLESKY )
-            return Cholesky(temp.val, m*sizeof(_Tp), m, b.val, m*sizeof(_Tp), m);
-
-        return LU(temp.val, m*sizeof(_Tp), m, b.val, m*sizeof(_Tp), m) != 0;
+        return invert(a, b, method) != 0;
     }
 };
 
-template<typename _Tp> struct Matx_FastInvOp<_Tp, 2>
+template<typename _Tp, int m> struct Matx_FastInvOp<_Tp, m, m>
 {
-    bool operator()(const Matx<_Tp, 2, 2>& a, Matx<_Tp, 2, 2>& b, int) const
+    bool operator()(const Matx<_Tp, m, m>& a, Matx<_Tp, m, m>& b, int method) const
     {
-        _Tp d = determinant(a);
-        if( d == 0 )
+        if (method == DECOMP_LU || method == DECOMP_CHOLESKY)
+        {
+            Matx<_Tp, m, m> temp = a;
+
+            // assume that b is all 0's on input => make it a unity matrix
+            for (int i = 0; i < m; i++)
+                b(i, i) = (_Tp)1;
+
+            if (method == DECOMP_CHOLESKY)
+                return Cholesky(temp.val, m*sizeof(_Tp), m, b.val, m*sizeof(_Tp), m);
+
+            return LU(temp.val, m*sizeof(_Tp), m, b.val, m*sizeof(_Tp), m) != 0;
+        }
+        else
+        {
+            return invert(a, b, method) != 0;
+        }
+    }
+};
+
+template<typename _Tp> struct Matx_FastInvOp<_Tp, 2, 2>
+{
+    bool operator()(const Matx<_Tp, 2, 2>& a, Matx<_Tp, 2, 2>& b, int /*method*/) const
+    {
+        _Tp d = (_Tp)determinant(a);
+        if (d == 0)
             return false;
         d = 1/d;
         b(1,1) = a(0,0)*d;
@@ -92,12 +119,12 @@ template<typename _Tp> struct Matx_FastInvOp<_Tp, 2>
     }
 };
 
-template<typename _Tp> struct Matx_FastInvOp<_Tp, 3>
+template<typename _Tp> struct Matx_FastInvOp<_Tp, 3, 3>
 {
-    bool operator()(const Matx<_Tp, 3, 3>& a, Matx<_Tp, 3, 3>& b, int) const
+    bool operator()(const Matx<_Tp, 3, 3>& a, Matx<_Tp, 3, 3>& b, int /*method*/) const
     {
         _Tp d = (_Tp)determinant(a);
-        if( d == 0 )
+        if (d == 0)
             return false;
         d = 1/d;
         b(0,0) = (a(1,1) * a(2,2) - a(1,2) * a(2,1)) * d;
@@ -116,27 +143,43 @@ template<typename _Tp> struct Matx_FastInvOp<_Tp, 3>
 };
 
 
-template<typename _Tp, int m, int n> struct Matx_FastSolveOp
+template<typename _Tp, int m, int l, int n> struct Matx_FastSolveOp
+{
+    bool operator()(const Matx<_Tp, m, l>& a, const Matx<_Tp, m, n>& b,
+                    Matx<_Tp, l, n>& x, int method) const
+    {
+        return cv::solve(a, b, x, method);
+    }
+};
+
+template<typename _Tp, int m, int n> struct Matx_FastSolveOp<_Tp, m, m, n>
 {
     bool operator()(const Matx<_Tp, m, m>& a, const Matx<_Tp, m, n>& b,
                     Matx<_Tp, m, n>& x, int method) const
     {
-        Matx<_Tp, m, m> temp = a;
-        x = b;
-        if( method == DECOMP_CHOLESKY )
-            return Cholesky(temp.val, m*sizeof(_Tp), m, x.val, n*sizeof(_Tp), n);
+        if (method == DECOMP_LU || method == DECOMP_CHOLESKY)
+        {
+            Matx<_Tp, m, m> temp = a;
+            x = b;
+            if( method == DECOMP_CHOLESKY )
+                return Cholesky(temp.val, m*sizeof(_Tp), m, x.val, n*sizeof(_Tp), n);
 
-        return LU(temp.val, m*sizeof(_Tp), m, x.val, n*sizeof(_Tp), n) != 0;
+            return LU(temp.val, m*sizeof(_Tp), m, x.val, n*sizeof(_Tp), n) != 0;
+        }
+        else
+        {
+            return cv::solve(a, b, x, method);
+        }
     }
 };
 
-template<typename _Tp> struct Matx_FastSolveOp<_Tp, 2, 1>
+template<typename _Tp> struct Matx_FastSolveOp<_Tp, 2, 2, 1>
 {
     bool operator()(const Matx<_Tp, 2, 2>& a, const Matx<_Tp, 2, 1>& b,
                     Matx<_Tp, 2, 1>& x, int) const
     {
-        _Tp d = determinant(a);
-        if( d == 0 )
+        _Tp d = (_Tp)determinant(a);
+        if (d == 0)
             return false;
         d = 1/d;
         x(0) = (b(0)*a(1,1) - b(1)*a(0,1))*d;
@@ -145,13 +188,13 @@ template<typename _Tp> struct Matx_FastSolveOp<_Tp, 2, 1>
     }
 };
 
-template<typename _Tp> struct Matx_FastSolveOp<_Tp, 3, 1>
+template<typename _Tp> struct Matx_FastSolveOp<_Tp, 3, 3, 1>
 {
     bool operator()(const Matx<_Tp, 3, 3>& a, const Matx<_Tp, 3, 1>& b,
                     Matx<_Tp, 3, 1>& x, int) const
     {
         _Tp d = (_Tp)determinant(a);
-        if( d == 0 )
+        if (d == 0)
             return false;
         d = 1/d;
         x(0) = d*(b(0)*(a(1,1)*a(2,2) - a(1,2)*a(2,1)) -
@@ -191,15 +234,8 @@ template<typename _Tp, int m, int n> inline
 Matx<_Tp, n, m> Matx<_Tp, m, n>::inv(int method, bool *p_is_ok /*= NULL*/) const
 {
     Matx<_Tp, n, m> b;
-    bool ok;
-    if( method == DECOMP_LU || method == DECOMP_CHOLESKY )
-        ok = internal::Matx_FastInvOp<_Tp, m>()(*this, b, method);
-    else
-    {
-        Mat A(*this, false), B(b, false);
-        ok = (invert(A, B, method) != 0);
-    }
-    if( NULL != p_is_ok ) { *p_is_ok = ok; }
+    bool ok = cv::internal::Matx_FastInvOp<_Tp, m, n>()(*this, b, method);
+    if (p_is_ok) *p_is_ok = ok;
     return ok ? b : Matx<_Tp, n, m>::zeros();
 }
 
@@ -207,15 +243,7 @@ template<typename _Tp, int m, int n> template<int l> inline
 Matx<_Tp, n, l> Matx<_Tp, m, n>::solve(const Matx<_Tp, m, l>& rhs, int method) const
 {
     Matx<_Tp, n, l> x;
-    bool ok;
-    if( method == DECOMP_LU || method == DECOMP_CHOLESKY )
-        ok = internal::Matx_FastSolveOp<_Tp, m, l>()(*this, rhs, x, method);
-    else
-    {
-        Mat A(*this, false), B(rhs, false), X(x, false);
-        ok = cv::solve(A, B, X, method);
-    }
-
+    bool ok = cv::internal::Matx_FastSolveOp<_Tp, m, n, l>()(*this, rhs, x, method);
     return ok ? x : Matx<_Tp, n, l>::zeros();
 }
 
@@ -234,48 +262,67 @@ Matx<_Tp, n, l> Matx<_Tp, m, n>::solve(const Matx<_Tp, m, l>& rhs, int method) c
     template<typename _Tp> CV_MAT_AUG_OPERATOR1(op, cvop, A, B) \
     template<typename _Tp> CV_MAT_AUG_OPERATOR1(op, cvop, const A, B)
 
+#define CV_MAT_AUG_OPERATOR_TN(op, cvop, A)                                \
+    template<typename _Tp, int m, int n> static inline A& operator op (A& a, const Matx<_Tp,m,n>& b) { cvop; return a; } \
+    template<typename _Tp, int m, int n> static inline const A& operator op (const A& a, const Matx<_Tp,m,n>& b) { cvop; return a; }
+
 CV_MAT_AUG_OPERATOR  (+=, cv::add(a,b,a), Mat, Mat)
 CV_MAT_AUG_OPERATOR  (+=, cv::add(a,b,a), Mat, Scalar)
 CV_MAT_AUG_OPERATOR_T(+=, cv::add(a,b,a), Mat_<_Tp>, Mat)
 CV_MAT_AUG_OPERATOR_T(+=, cv::add(a,b,a), Mat_<_Tp>, Scalar)
 CV_MAT_AUG_OPERATOR_T(+=, cv::add(a,b,a), Mat_<_Tp>, Mat_<_Tp>)
+CV_MAT_AUG_OPERATOR_TN(+=, cv::add(a,Mat(b),a), Mat)
+CV_MAT_AUG_OPERATOR_TN(+=, cv::add(a,Mat(b),a), Mat_<_Tp>)
 
 CV_MAT_AUG_OPERATOR  (-=, cv::subtract(a,b,a), Mat, Mat)
 CV_MAT_AUG_OPERATOR  (-=, cv::subtract(a,b,a), Mat, Scalar)
 CV_MAT_AUG_OPERATOR_T(-=, cv::subtract(a,b,a), Mat_<_Tp>, Mat)
 CV_MAT_AUG_OPERATOR_T(-=, cv::subtract(a,b,a), Mat_<_Tp>, Scalar)
 CV_MAT_AUG_OPERATOR_T(-=, cv::subtract(a,b,a), Mat_<_Tp>, Mat_<_Tp>)
+CV_MAT_AUG_OPERATOR_TN(-=, cv::subtract(a,Mat(b),a), Mat)
+CV_MAT_AUG_OPERATOR_TN(-=, cv::subtract(a,Mat(b),a), Mat_<_Tp>)
 
 CV_MAT_AUG_OPERATOR  (*=, cv::gemm(a, b, 1, Mat(), 0, a, 0), Mat, Mat)
 CV_MAT_AUG_OPERATOR_T(*=, cv::gemm(a, b, 1, Mat(), 0, a, 0), Mat_<_Tp>, Mat)
 CV_MAT_AUG_OPERATOR_T(*=, cv::gemm(a, b, 1, Mat(), 0, a, 0), Mat_<_Tp>, Mat_<_Tp>)
 CV_MAT_AUG_OPERATOR  (*=, a.convertTo(a, -1, b), Mat, double)
 CV_MAT_AUG_OPERATOR_T(*=, a.convertTo(a, -1, b), Mat_<_Tp>, double)
+CV_MAT_AUG_OPERATOR_TN(*=, cv::gemm(a, Mat(b), 1, Mat(), 0, a, 0), Mat)
+CV_MAT_AUG_OPERATOR_TN(*=, cv::gemm(a, Mat(b), 1, Mat(), 0, a, 0), Mat_<_Tp>)
 
 CV_MAT_AUG_OPERATOR  (/=, cv::divide(a,b,a), Mat, Mat)
 CV_MAT_AUG_OPERATOR_T(/=, cv::divide(a,b,a), Mat_<_Tp>, Mat)
 CV_MAT_AUG_OPERATOR_T(/=, cv::divide(a,b,a), Mat_<_Tp>, Mat_<_Tp>)
 CV_MAT_AUG_OPERATOR  (/=, a.convertTo((Mat&)a, -1, 1./b), Mat, double)
 CV_MAT_AUG_OPERATOR_T(/=, a.convertTo((Mat&)a, -1, 1./b), Mat_<_Tp>, double)
+CV_MAT_AUG_OPERATOR_TN(/=, cv::divide(a, Mat(b), a), Mat)
+CV_MAT_AUG_OPERATOR_TN(/=, cv::divide(a, Mat(b), a), Mat_<_Tp>)
 
 CV_MAT_AUG_OPERATOR  (&=, cv::bitwise_and(a,b,a), Mat, Mat)
 CV_MAT_AUG_OPERATOR  (&=, cv::bitwise_and(a,b,a), Mat, Scalar)
 CV_MAT_AUG_OPERATOR_T(&=, cv::bitwise_and(a,b,a), Mat_<_Tp>, Mat)
 CV_MAT_AUG_OPERATOR_T(&=, cv::bitwise_and(a,b,a), Mat_<_Tp>, Scalar)
 CV_MAT_AUG_OPERATOR_T(&=, cv::bitwise_and(a,b,a), Mat_<_Tp>, Mat_<_Tp>)
+CV_MAT_AUG_OPERATOR_TN(&=, cv::bitwise_and(a, Mat(b), a), Mat)
+CV_MAT_AUG_OPERATOR_TN(&=, cv::bitwise_and(a, Mat(b), a), Mat_<_Tp>)
 
 CV_MAT_AUG_OPERATOR  (|=, cv::bitwise_or(a,b,a), Mat, Mat)
 CV_MAT_AUG_OPERATOR  (|=, cv::bitwise_or(a,b,a), Mat, Scalar)
 CV_MAT_AUG_OPERATOR_T(|=, cv::bitwise_or(a,b,a), Mat_<_Tp>, Mat)
 CV_MAT_AUG_OPERATOR_T(|=, cv::bitwise_or(a,b,a), Mat_<_Tp>, Scalar)
 CV_MAT_AUG_OPERATOR_T(|=, cv::bitwise_or(a,b,a), Mat_<_Tp>, Mat_<_Tp>)
+CV_MAT_AUG_OPERATOR_TN(|=, cv::bitwise_or(a, Mat(b), a), Mat)
+CV_MAT_AUG_OPERATOR_TN(|=, cv::bitwise_or(a, Mat(b), a), Mat_<_Tp>)
 
 CV_MAT_AUG_OPERATOR  (^=, cv::bitwise_xor(a,b,a), Mat, Mat)
 CV_MAT_AUG_OPERATOR  (^=, cv::bitwise_xor(a,b,a), Mat, Scalar)
 CV_MAT_AUG_OPERATOR_T(^=, cv::bitwise_xor(a,b,a), Mat_<_Tp>, Mat)
 CV_MAT_AUG_OPERATOR_T(^=, cv::bitwise_xor(a,b,a), Mat_<_Tp>, Scalar)
 CV_MAT_AUG_OPERATOR_T(^=, cv::bitwise_xor(a,b,a), Mat_<_Tp>, Mat_<_Tp>)
+CV_MAT_AUG_OPERATOR_TN(^=, cv::bitwise_xor(a, Mat(b), a), Mat)
+CV_MAT_AUG_OPERATOR_TN(^=, cv::bitwise_xor(a, Mat(b), a), Mat_<_Tp>)
 
+#undef CV_MAT_AUG_OPERATOR_TN
 #undef CV_MAT_AUG_OPERATOR_T
 #undef CV_MAT_AUG_OPERATOR
 #undef CV_MAT_AUG_OPERATOR1
@@ -347,13 +394,15 @@ inline int    RNG::uniform(int a, int b)       { return a == b ? a : (int)(next(
 inline float  RNG::uniform(float a, float b)   { return ((float)*this)*(b - a) + a; }
 inline double RNG::uniform(double a, double b) { return ((double)*this)*(b - a) + a; }
 
+inline bool RNG::operator ==(const RNG& other) const { return state == other.state; }
+
 inline unsigned RNG::next()
 {
     state = (uint64)(unsigned)state* /*CV_RNG_COEFF*/ 4164903690U + (unsigned)(state >> 32);
     return (unsigned)state;
 }
 
-//! returns the next unifomly-distributed random number of the specified type
+//! returns the next uniformly-distributed random number of the specified type
 template<typename _Tp> static inline _Tp randu()
 {
   return (_Tp)theRNG();
@@ -361,12 +410,29 @@ template<typename _Tp> static inline _Tp randu()
 
 ///////////////////////////////// Formatted string generation /////////////////////////////////
 
-CV_EXPORTS String format( const char* fmt, ... );
+/** @brief Returns a text string formatted using the printf-like expression.
+
+The function acts like sprintf but forms and returns an STL string. It can be used to form an error
+message in the Exception constructor.
+@param fmt printf-compatible formatting specifiers.
+
+**Note**:
+|Type|Specifier|
+|-|-|
+|`const char*`|`%s`|
+|`char`|`%c`|
+|`float` / `double`|`%f`,`%g`|
+|`int`, `long`, `long long`|`%d`, `%ld`, ``%lld`|
+|`unsigned`, `unsigned long`, `unsigned long long`|`%u`, `%lu`, `%llu`|
+|`uint64` -> `uintmax_t`, `int64` -> `intmax_t`|`%ju`, `%jd`|
+|`size_t`|`%zu`|
+ */
+CV_EXPORTS String format( const char* fmt, ... ) CV_FORMAT_PRINTF(1, 2);
 
 ///////////////////////////////// Formatted output of cv::Mat /////////////////////////////////
 
 static inline
-Ptr<Formatted> format(InputArray mtx, int fmt)
+Ptr<Formatted> format(InputArray mtx, Formatter::FormatType fmt)
 {
     return Formatter::get(fmt)->format(mtx.getMat());
 }
@@ -410,84 +476,6 @@ template<typename _Tp, int m, int n> static inline
 int print(const Matx<_Tp, m, n>& matx, FILE* stream = stdout)
 {
     return print(Formatter::get()->format(cv::Mat(matx)), stream);
-}
-
-
-
-////////////////////////////////////////// Algorithm //////////////////////////////////////////
-
-template<typename _Tp> inline
-Ptr<_Tp> Algorithm::create(const String& name)
-{
-    return _create(name).dynamicCast<_Tp>();
-}
-
-template<typename _Tp> inline
-void Algorithm::set(const char* _name, const Ptr<_Tp>& value)
-{
-    Ptr<Algorithm> algo_ptr = value. template dynamicCast<cv::Algorithm>();
-    if (!algo_ptr) {
-        CV_Error( Error::StsUnsupportedFormat, "unknown/unsupported Ptr type of the second parameter of the method Algorithm::set");
-    }
-    info()->set(this, _name, ParamType<Algorithm>::type, &algo_ptr);
-}
-
-template<typename _Tp> inline
-void Algorithm::set(const String& _name, const Ptr<_Tp>& value)
-{
-    this->set<_Tp>(_name.c_str(), value);
-}
-
-template<typename _Tp> inline
-void Algorithm::setAlgorithm(const char* _name, const Ptr<_Tp>& value)
-{
-    Ptr<Algorithm> algo_ptr = value. template ptr<cv::Algorithm>();
-    if (!algo_ptr) {
-        CV_Error( Error::StsUnsupportedFormat, "unknown/unsupported Ptr type of the second parameter of the method Algorithm::set");
-    }
-    info()->set(this, _name, ParamType<Algorithm>::type, &algo_ptr);
-}
-
-template<typename _Tp> inline
-void Algorithm::setAlgorithm(const String& _name, const Ptr<_Tp>& value)
-{
-    this->set<_Tp>(_name.c_str(), value);
-}
-
-template<typename _Tp> inline
-typename ParamType<_Tp>::member_type Algorithm::get(const String& _name) const
-{
-    typename ParamType<_Tp>::member_type value;
-    info()->get(this, _name.c_str(), ParamType<_Tp>::type, &value);
-    return value;
-}
-
-template<typename _Tp> inline
-typename ParamType<_Tp>::member_type Algorithm::get(const char* _name) const
-{
-    typename ParamType<_Tp>::member_type value;
-    info()->get(this, _name, ParamType<_Tp>::type, &value);
-    return value;
-}
-
-template<typename _Tp, typename _Base> inline
-void AlgorithmInfo::addParam(Algorithm& algo, const char* parameter, Ptr<_Tp>& value, bool readOnly,
-                             Ptr<_Tp> (Algorithm::*getter)(), void (Algorithm::*setter)(const Ptr<_Tp>&),
-                             const String& help)
-{
-    //TODO: static assert: _Tp inherits from _Base
-    addParam_(algo, parameter, ParamType<_Base>::type, &value, readOnly,
-              (Algorithm::Getter)getter, (Algorithm::Setter)setter, help);
-}
-
-template<typename _Tp> inline
-void AlgorithmInfo::addParam(Algorithm& algo, const char* parameter, Ptr<_Tp>& value, bool readOnly,
-                             Ptr<_Tp> (Algorithm::*getter)(), void (Algorithm::*setter)(const Ptr<_Tp>&),
-                             const String& help)
-{
-    //TODO: static assert: _Tp inherits from Algorithm
-    addParam_(algo, parameter, ParamType<Algorithm>::type, &value, readOnly,
-              (Algorithm::Getter)getter, (Algorithm::Setter)setter, help);
 }
 
 //! @endcond

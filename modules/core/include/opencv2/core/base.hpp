@@ -42,14 +42,17 @@
 //
 //M*/
 
-#ifndef __OPENCV_CORE_BASE_HPP__
-#define __OPENCV_CORE_BASE_HPP__
+#ifndef OPENCV_CORE_BASE_HPP
+#define OPENCV_CORE_BASE_HPP
 
 #ifndef __cplusplus
 #  error base.hpp header must be compiled as C++
 #endif
 
+#include "opencv2/opencv_modules.hpp"
+
 #include <climits>
+#include <algorithm>
 
 #include "opencv2/core/cvdef.h"
 #include "opencv2/core/cvstd.hpp"
@@ -63,38 +66,38 @@ namespace cv
 namespace Error {
 //! error codes
 enum Code {
-    StsOk=                       0,  //!< everithing is ok
+    StsOk=                       0,  //!< everything is ok
     StsBackTrace=               -1,  //!< pseudo error for back trace
     StsError=                   -2,  //!< unknown /unspecified error
     StsInternal=                -3,  //!< internal error (bad state)
     StsNoMem=                   -4,  //!< insufficient memory
     StsBadArg=                  -5,  //!< function arg/param is bad
     StsBadFunc=                 -6,  //!< unsupported function
-    StsNoConv=                  -7,  //!< iter. didn't converge
+    StsNoConv=                  -7,  //!< iteration didn't converge
     StsAutoTrace=               -8,  //!< tracing
     HeaderIsNull=               -9,  //!< image header is NULL
     BadImageSize=              -10,  //!< image size is invalid
     BadOffset=                 -11,  //!< offset is invalid
     BadDataPtr=                -12,  //!<
-    BadStep=                   -13,  //!<
+    BadStep=                   -13,  //!< image step is wrong, this may happen for a non-continuous matrix.
     BadModelOrChSeq=           -14,  //!<
-    BadNumChannels=            -15,  //!<
+    BadNumChannels=            -15,  //!< bad number of channels, for example, some functions accept only single channel matrices.
     BadNumChannel1U=           -16,  //!<
-    BadDepth=                  -17,  //!<
+    BadDepth=                  -17,  //!< input image depth is not supported by the function
     BadAlphaChannel=           -18,  //!<
-    BadOrder=                  -19,  //!<
-    BadOrigin=                 -20,  //!<
-    BadAlign=                  -21,  //!<
+    BadOrder=                  -19,  //!< number of dimensions is out of range
+    BadOrigin=                 -20,  //!< incorrect input origin
+    BadAlign=                  -21,  //!< incorrect input align
     BadCallBack=               -22,  //!<
     BadTileSize=               -23,  //!<
-    BadCOI=                    -24,  //!<
-    BadROISize=                -25,  //!<
+    BadCOI=                    -24,  //!< input COI is not supported
+    BadROISize=                -25,  //!< incorrect input roi
     MaskIsTiled=               -26,  //!<
     StsNullPtr=                -27,  //!< null pointer
     StsVecLengthErr=           -28,  //!< incorrect vector length
-    StsFilterStructContentErr= -29,  //!< incorr. filter structure content
-    StsKernelStructContentErr= -30,  //!< incorr. transform kernel content
-    StsFilterOffsetErr=        -31,  //!< incorrect filter ofset value
+    StsFilterStructContentErr= -29,  //!< incorrect filter structure content
+    StsKernelStructContentErr= -30,  //!< incorrect transform kernel content
+    StsFilterOffsetErr=        -31,  //!< incorrect filter offset value
     StsBadSize=                -201, //!< the input/output structure size is incorrect
     StsDivByZero=              -202, //!< division by zero
     StsInplaceNotSupported=    -203, //!< in-place operation is not supported
@@ -110,13 +113,13 @@ enum Code {
     StsNotImplemented=         -213, //!< the requested function/feature is not implemented
     StsBadMemBlock=            -214, //!< an allocated block has been corrupted
     StsAssert=                 -215, //!< assertion failed
-    GpuNotSupported=           -216,
-    GpuApiCallError=           -217,
-    OpenGlNotSupported=        -218,
-    OpenGlApiCallError=        -219,
-    OpenCLApiCallError=        -220,
+    GpuNotSupported=           -216, //!< no CUDA support
+    GpuApiCallError=           -217, //!< GPU API call error
+    OpenGlNotSupported=        -218, //!< no OpenGL support
+    OpenGlApiCallError=        -219, //!< OpenGL API call error
+    OpenCLApiCallError=        -220, //!< OpenCL API call error
     OpenCLDoubleNotSupported=  -221,
-    OpenCLInitError=           -222,
+    OpenCLInitError=           -222, //!< OpenCL initialization error
     OpenCLNoAMDBlasFft=        -223
 };
 } //Error
@@ -149,28 +152,57 @@ enum DecompTypes {
 };
 
 /** norm types
-- For one array:
-\f[norm =  \forkthree{\|\texttt{src1}\|_{L_{\infty}} =  \max _I | \texttt{src1} (I)|}{if  \(\texttt{normType} = \texttt{NORM\_INF}\) }
-{ \| \texttt{src1} \| _{L_1} =  \sum _I | \texttt{src1} (I)|}{if  \(\texttt{normType} = \texttt{NORM\_L1}\) }
-{ \| \texttt{src1} \| _{L_2} =  \sqrt{\sum_I \texttt{src1}(I)^2} }{if  \(\texttt{normType} = \texttt{NORM\_L2}\) }\f]
 
-- Absolute norm for two arrays
-\f[norm =  \forkthree{\|\texttt{src1}-\texttt{src2}\|_{L_{\infty}} =  \max _I | \texttt{src1} (I) -  \texttt{src2} (I)|}{if  \(\texttt{normType} = \texttt{NORM\_INF}\) }
-{ \| \texttt{src1} - \texttt{src2} \| _{L_1} =  \sum _I | \texttt{src1} (I) -  \texttt{src2} (I)|}{if  \(\texttt{normType} = \texttt{NORM\_L1}\) }
-{ \| \texttt{src1} - \texttt{src2} \| _{L_2} =  \sqrt{\sum_I (\texttt{src1}(I) - \texttt{src2}(I))^2} }{if  \(\texttt{normType} = \texttt{NORM\_L2}\) }\f]
+src1 and src2 denote input arrays.
+*/
 
-- Relative norm for two arrays
-\f[norm =  \forkthree{\frac{\|\texttt{src1}-\texttt{src2}\|_{L_{\infty}}    }{\|\texttt{src2}\|_{L_{\infty}} }}{if  \(\texttt{normType} = \texttt{NORM\_RELATIVE\_INF}\) }
-{ \frac{\|\texttt{src1}-\texttt{src2}\|_{L_1} }{\|\texttt{src2}\|_{L_1}} }{if  \(\texttt{normType} = \texttt{NORM\_RELATIVE\_L1}\) }
-{ \frac{\|\texttt{src1}-\texttt{src2}\|_{L_2} }{\|\texttt{src2}\|_{L_2}} }{if  \(\texttt{normType} = \texttt{NORM\_RELATIVE\_L2}\) }\f]
-  */
-enum NormTypes { NORM_INF       = 1,
+enum NormTypes {
+                /**
+                \f[
+                norm =  \forkthree
+                {\|\texttt{src1}\|_{L_{\infty}} =  \max _I | \texttt{src1} (I)|}{if  \(\texttt{normType} = \texttt{NORM_INF}\) }
+                {\|\texttt{src1}-\texttt{src2}\|_{L_{\infty}} =  \max _I | \texttt{src1} (I) -  \texttt{src2} (I)|}{if  \(\texttt{normType} = \texttt{NORM_INF}\) }
+                {\frac{\|\texttt{src1}-\texttt{src2}\|_{L_{\infty}}    }{\|\texttt{src2}\|_{L_{\infty}} }}{if  \(\texttt{normType} = \texttt{NORM_RELATIVE | NORM_INF}\) }
+                \f]
+                */
+                NORM_INF       = 1,
+                /**
+                \f[
+                norm =  \forkthree
+                {\| \texttt{src1} \| _{L_1} =  \sum _I | \texttt{src1} (I)|}{if  \(\texttt{normType} = \texttt{NORM_L1}\)}
+                { \| \texttt{src1} - \texttt{src2} \| _{L_1} =  \sum _I | \texttt{src1} (I) -  \texttt{src2} (I)|}{if  \(\texttt{normType} = \texttt{NORM_L1}\) }
+                { \frac{\|\texttt{src1}-\texttt{src2}\|_{L_1} }{\|\texttt{src2}\|_{L_1}} }{if  \(\texttt{normType} = \texttt{NORM_RELATIVE | NORM_L1}\) }
+                \f]*/
                  NORM_L1        = 2,
+                 /**
+                 \f[
+                 norm =  \forkthree
+                 { \| \texttt{src1} \| _{L_2} =  \sqrt{\sum_I \texttt{src1}(I)^2} }{if  \(\texttt{normType} = \texttt{NORM_L2}\) }
+                 { \| \texttt{src1} - \texttt{src2} \| _{L_2} =  \sqrt{\sum_I (\texttt{src1}(I) - \texttt{src2}(I))^2} }{if  \(\texttt{normType} = \texttt{NORM_L2}\) }
+                 { \frac{\|\texttt{src1}-\texttt{src2}\|_{L_2} }{\|\texttt{src2}\|_{L_2}} }{if  \(\texttt{normType} = \texttt{NORM_RELATIVE | NORM_L2}\) }
+                 \f]
+                 */
                  NORM_L2        = 4,
+                 /**
+                 \f[
+                 norm =  \forkthree
+                 { \| \texttt{src1} \| _{L_2} ^{2} = \sum_I \texttt{src1}(I)^2} {if  \(\texttt{normType} = \texttt{NORM_L2SQR}\)}
+                 { \| \texttt{src1} - \texttt{src2} \| _{L_2} ^{2} =  \sum_I (\texttt{src1}(I) - \texttt{src2}(I))^2 }{if  \(\texttt{normType} = \texttt{NORM_L2SQR}\) }
+                 { \left(\frac{\|\texttt{src1}-\texttt{src2}\|_{L_2} }{\|\texttt{src2}\|_{L_2}}\right)^2 }{if  \(\texttt{normType} = \texttt{NORM_RELATIVE | NORM_L2SQR}\) }
+                 \f]
+                 */
                  NORM_L2SQR     = 5,
+                 /**
+                 In the case of one input array, calculates the Hamming distance of the array from zero,
+                 In the case of two input arrays, calculates the Hamming distance between the arrays.
+                 */
                  NORM_HAMMING   = 6,
+                 /**
+                 Similar to NORM_HAMMING, but in the calculation, each two bits of the input sequence will
+                 be added and treated as a single bit to be used in the same calculation as NORM_HAMMING.
+                 */
                  NORM_HAMMING2  = 7,
-                 NORM_TYPE_MASK = 7,
+                 NORM_TYPE_MASK = 7, //!< bit-mask which can be used to separate norm type from norm flags
                  NORM_RELATIVE  = 8, //!< flag
                  NORM_MINMAX    = 32 //!< flag
                };
@@ -218,6 +250,10 @@ enum DftFlags {
         into a real array and inverse transformation is executed, the function treats the input as a
         packed complex-conjugate symmetrical array, and the output will also be a real array). */
     DFT_REAL_OUTPUT    = 32,
+    /** specifies that input is complex input. If this flag is set, the input must have 2 channels.
+        On the other hand, for backwards compatibility reason, if input has 2 channels, input is
+        already considered complex. */
+    DFT_COMPLEX_INPUT  = 64,
     /** performs an inverse 1D or 2D transform instead of the default forward transform. */
     DCT_INVERSE        = DFT_INVERSE,
     /** performs a forward or inverse transform of every individual row of the input
@@ -235,7 +271,7 @@ enum BorderTypes {
     BORDER_REFLECT     = 2, //!< `fedcba|abcdefgh|hgfedcb`
     BORDER_WRAP        = 3, //!< `cdefgh|abcdefgh|abcdefg`
     BORDER_REFLECT_101 = 4, //!< `gfedcb|abcdefgh|gfedcba`
-    BORDER_TRANSPARENT = 5, //!< `uvwxyz|absdefgh|ijklmno`
+    BORDER_TRANSPARENT = 5, //!< `uvwxyz|abcdefgh|ijklmno`
 
     BORDER_REFLECT101  = BORDER_REFLECT_101, //!< same as BORDER_REFLECT_101
     BORDER_DEFAULT     = BORDER_REFLECT_101, //!< same as BORDER_REFLECT_101
@@ -247,65 +283,6 @@ enum BorderTypes {
 //! @addtogroup core_utils
 //! @{
 
-//! @cond IGNORED
-
-//////////////// static assert /////////////////
-#define CVAUX_CONCAT_EXP(a, b) a##b
-#define CVAUX_CONCAT(a, b) CVAUX_CONCAT_EXP(a,b)
-
-#if defined(__clang__)
-#  ifndef __has_extension
-#    define __has_extension __has_feature /* compatibility, for older versions of clang */
-#  endif
-#  if __has_extension(cxx_static_assert)
-#    define CV_StaticAssert(condition, reason)    static_assert((condition), reason " " #condition)
-#  endif
-#elif defined(__GNUC__)
-#  if (defined(__GXX_EXPERIMENTAL_CXX0X__) || __cplusplus >= 201103L)
-#    define CV_StaticAssert(condition, reason)    static_assert((condition), reason " " #condition)
-#  endif
-#elif defined(_MSC_VER)
-#  if _MSC_VER >= 1600 /* MSVC 10 */
-#    define CV_StaticAssert(condition, reason)    static_assert((condition), reason " " #condition)
-#  endif
-#endif
-#ifndef CV_StaticAssert
-#  if defined(__GNUC__) && (__GNUC__ > 3) && (__GNUC_MINOR__ > 2)
-#    define CV_StaticAssert(condition, reason) ({ extern int __attribute__((error("CV_StaticAssert: " reason " " #condition))) CV_StaticAssert(); ((condition) ? 0 : CV_StaticAssert()); })
-#  else
-     template <bool x> struct CV_StaticAssert_failed;
-     template <> struct CV_StaticAssert_failed<true> { enum { val = 1 }; };
-     template<int x> struct CV_StaticAssert_test {};
-#    define CV_StaticAssert(condition, reason)\
-       typedef cv::CV_StaticAssert_test< sizeof(cv::CV_StaticAssert_failed< static_cast<bool>(condition) >) > CVAUX_CONCAT(CV_StaticAssert_failed_at_, __LINE__)
-#  endif
-#endif
-
-// Suppress warning "-Wdeprecated-declarations" / C4996
-#if defined(_MSC_VER)
-    #define CV_DO_PRAGMA(x) __pragma(x)
-#elif defined(__GNUC__)
-    #define CV_DO_PRAGMA(x) _Pragma (#x)
-#else
-    #define CV_DO_PRAGMA(x)
-#endif
-
-#ifdef _MSC_VER
-#define CV_SUPPRESS_DEPRECATED_START \
-    CV_DO_PRAGMA(warning(push)) \
-    CV_DO_PRAGMA(warning(disable: 4996))
-#define CV_SUPPRESS_DEPRECATED_END CV_DO_PRAGMA(warning(pop))
-#elif defined (__clang__) || ((__GNUC__)  && ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ > 5))))
-#define CV_SUPPRESS_DEPRECATED_START \
-    CV_DO_PRAGMA(GCC diagnostic push) \
-    CV_DO_PRAGMA(GCC diagnostic ignored "-Wdeprecated-declarations")
-#define CV_SUPPRESS_DEPRECATED_END CV_DO_PRAGMA(GCC diagnostic pop)
-#else
-#define CV_SUPPRESS_DEPRECATED_START
-#define CV_SUPPRESS_DEPRECATED_END
-#endif
-//! @endcond
-
 /*! @brief Signals an error and raises the exception.
 
 By default the function prints information about the error to stderr,
@@ -314,44 +291,21 @@ It is possible to alternate error processing by using redirectError().
 @param _code - error code (Error::Code)
 @param _err - error description
 @param _func - function name. Available only when the compiler supports getting it
-@param _file - source file name where the error has occured
-@param _line - line number in the source file where the error has occured
-@see CV_Error, CV_Error_, CV_ErrorNoReturn, CV_ErrorNoReturn_, CV_Assert, CV_DbgAssert
+@param _file - source file name where the error has occurred
+@param _line - line number in the source file where the error has occurred
+@see CV_Error, CV_Error_, CV_Assert, CV_DbgAssert
  */
-CV_EXPORTS void error(int _code, const String& _err, const char* _func, const char* _file, int _line);
+CV_EXPORTS CV_NORETURN void error(int _code, const String& _err, const char* _func, const char* _file, int _line);
 
-#ifdef __GNUC__
-# if defined __clang__ || defined __APPLE__
-#   pragma GCC diagnostic push
-#   pragma GCC diagnostic ignored "-Winvalid-noreturn"
-# endif
-#endif
+#ifdef CV_STATIC_ANALYSIS
 
-/** same as cv::error, but does not return */
-CV_INLINE CV_NORETURN void errorNoReturn(int _code, const String& _err, const char* _func, const char* _file, int _line)
-{
-    error(_code, _err, _func, _file, _line);
-#ifdef __GNUC__
-# if !defined __clang__ && !defined __APPLE__
-    // this suppresses this warning: "noreturn" function does return [enabled by default]
-    __builtin_trap();
-    // or use infinite loop: for (;;) {}
-# endif
-#endif
-}
-#ifdef __GNUC__
-# if defined __clang__ || defined __APPLE__
-#   pragma GCC diagnostic pop
-# endif
-#endif
+// In practice, some macro are not processed correctly (noreturn is not detected).
+// We need to use simplified definition for them.
+#define CV_Error(code, msg) do { (void)(code); (void)(msg); abort(); } while (0)
+#define CV_Error_(code, args) do { (void)(code); (void)(cv::format args); abort(); } while (0)
+#define CV_Assert( expr ) do { if (!(expr)) abort(); } while (0)
 
-#if defined __GNUC__
-#define CV_Func __func__
-#elif defined _MSC_VER
-#define CV_Func __FUNCTION__
-#else
-#define CV_Func ""
-#endif
+#else // CV_STATIC_ANALYSIS
 
 /** @brief Call the error handler.
 
@@ -371,7 +325,7 @@ This macro can be used to construct an error message on-fly to include some dyna
 for example:
 @code
     // note the extra parentheses around the formatted text message
-    CV_Error_( CV_StsOutOfRange,
+    CV_Error_(Error::StsOutOfRange,
     ("the value at (%d, %d)=%g is out of range", badPt.x, badPt.y, badValue));
 @endcode
 @param code one of Error::Code
@@ -385,143 +339,66 @@ The macros CV_Assert (and CV_DbgAssert(expr)) evaluate the specified expression.
 raise an error (see cv::error). The macro CV_Assert checks the condition in both Debug and Release
 configurations while CV_DbgAssert is only retained in the Debug configuration.
 */
-#define CV_Assert( expr ) if(!!(expr)) ; else cv::error( cv::Error::StsAssert, #expr, CV_Func, __FILE__, __LINE__ )
+#define CV_Assert( expr ) do { if(!!(expr)) ; else cv::error( cv::Error::StsAssert, #expr, CV_Func, __FILE__, __LINE__ ); } while(0)
 
-/** same as CV_Error(code,msg), but does not return */
-#define CV_ErrorNoReturn( code, msg ) cv::errorNoReturn( code, msg, CV_Func, __FILE__, __LINE__ )
-
-/** same as CV_Error_(code,args), but does not return */
-#define CV_ErrorNoReturn_( code, args ) cv::errorNoReturn( code, cv::format args, CV_Func, __FILE__, __LINE__ )
-
-/** replaced with CV_Assert(expr) in Debug configuration */
-#ifdef _DEBUG
-#  define CV_DbgAssert(expr) CV_Assert(expr)
-#else
-#  define CV_DbgAssert(expr)
-#endif
-
-
-/////////////// saturate_cast (used in image & signal processing) ///////////////////
-
-/**
-Template function for accurate conversion from one primitive type to another.
-
-The functions saturate_cast resemble the standard C++ cast operations, such as static_cast\<T\>()
-and others. They perform an efficient and accurate conversion from one primitive type to another
-(see the introduction chapter). saturate in the name means that when the input value v is out of the
-range of the target type, the result is not formed just by taking low bits of the input, but instead
-the value is clipped. For example:
-@code
-    uchar a = saturate_cast<uchar>(-100); // a = 0 (UCHAR_MIN)
-    short b = saturate_cast<short>(33333.33333); // b = 32767 (SHRT_MAX)
-@endcode
-Such clipping is done when the target type is unsigned char , signed char , unsigned short or
-signed short . For 32-bit integers, no clipping is done.
-
-When the parameter is a floating-point value and the target type is an integer (8-, 16- or 32-bit),
-the floating-point value is first rounded to the nearest integer and then clipped if needed (when
-the target type is 8- or 16-bit).
-
-This operation is used in the simplest or most complex image processing functions in OpenCV.
-
-@param v Function parameter.
-@sa add, subtract, multiply, divide, Mat::convertTo
-*/
-template<typename _Tp> static inline _Tp saturate_cast(uchar v)    { return _Tp(v); }
-/** @overload */
-template<typename _Tp> static inline _Tp saturate_cast(schar v)    { return _Tp(v); }
-/** @overload */
-template<typename _Tp> static inline _Tp saturate_cast(ushort v)   { return _Tp(v); }
-/** @overload */
-template<typename _Tp> static inline _Tp saturate_cast(short v)    { return _Tp(v); }
-/** @overload */
-template<typename _Tp> static inline _Tp saturate_cast(unsigned v) { return _Tp(v); }
-/** @overload */
-template<typename _Tp> static inline _Tp saturate_cast(int v)      { return _Tp(v); }
-/** @overload */
-template<typename _Tp> static inline _Tp saturate_cast(float v)    { return _Tp(v); }
-/** @overload */
-template<typename _Tp> static inline _Tp saturate_cast(double v)   { return _Tp(v); }
+#endif // CV_STATIC_ANALYSIS
 
 //! @cond IGNORED
+#if !defined(__OPENCV_BUILD)  // TODO: backward compatibility only
+#ifndef CV_ErrorNoReturn
+#define CV_ErrorNoReturn CV_Error
+#endif
+#ifndef CV_ErrorNoReturn_
+#define CV_ErrorNoReturn_ CV_Error_
+#endif
+#endif
 
-template<> inline uchar saturate_cast<uchar>(schar v)        { return (uchar)std::max((int)v, 0); }
-template<> inline uchar saturate_cast<uchar>(ushort v)       { return (uchar)std::min((unsigned)v, (unsigned)UCHAR_MAX); }
-template<> inline uchar saturate_cast<uchar>(int v)          { return (uchar)((unsigned)v <= UCHAR_MAX ? v : v > 0 ? UCHAR_MAX : 0); }
-template<> inline uchar saturate_cast<uchar>(short v)        { return saturate_cast<uchar>((int)v); }
-template<> inline uchar saturate_cast<uchar>(unsigned v)     { return (uchar)std::min(v, (unsigned)UCHAR_MAX); }
-template<> inline uchar saturate_cast<uchar>(float v)        { int iv = cvRound(v); return saturate_cast<uchar>(iv); }
-template<> inline uchar saturate_cast<uchar>(double v)       { int iv = cvRound(v); return saturate_cast<uchar>(iv); }
+#define CV_Assert_1 CV_Assert
+#define CV_Assert_2( expr, ... ) CV_Assert_1(expr); __CV_EXPAND(CV_Assert_1( __VA_ARGS__ ))
+#define CV_Assert_3( expr, ... ) CV_Assert_1(expr); __CV_EXPAND(CV_Assert_2( __VA_ARGS__ ))
+#define CV_Assert_4( expr, ... ) CV_Assert_1(expr); __CV_EXPAND(CV_Assert_3( __VA_ARGS__ ))
+#define CV_Assert_5( expr, ... ) CV_Assert_1(expr); __CV_EXPAND(CV_Assert_4( __VA_ARGS__ ))
+#define CV_Assert_6( expr, ... ) CV_Assert_1(expr); __CV_EXPAND(CV_Assert_5( __VA_ARGS__ ))
+#define CV_Assert_7( expr, ... ) CV_Assert_1(expr); __CV_EXPAND(CV_Assert_6( __VA_ARGS__ ))
+#define CV_Assert_8( expr, ... ) CV_Assert_1(expr); __CV_EXPAND(CV_Assert_7( __VA_ARGS__ ))
+#define CV_Assert_9( expr, ... ) CV_Assert_1(expr); __CV_EXPAND(CV_Assert_8( __VA_ARGS__ ))
+#define CV_Assert_10( expr, ... ) CV_Assert_1(expr); __CV_EXPAND(CV_Assert_9( __VA_ARGS__ ))
 
-template<> inline schar saturate_cast<schar>(uchar v)        { return (schar)std::min((int)v, SCHAR_MAX); }
-template<> inline schar saturate_cast<schar>(ushort v)       { return (schar)std::min((unsigned)v, (unsigned)SCHAR_MAX); }
-template<> inline schar saturate_cast<schar>(int v)          { return (schar)((unsigned)(v-SCHAR_MIN) <= (unsigned)UCHAR_MAX ? v : v > 0 ? SCHAR_MAX : SCHAR_MIN); }
-template<> inline schar saturate_cast<schar>(short v)        { return saturate_cast<schar>((int)v); }
-template<> inline schar saturate_cast<schar>(unsigned v)     { return (schar)std::min(v, (unsigned)SCHAR_MAX); }
-template<> inline schar saturate_cast<schar>(float v)        { int iv = cvRound(v); return saturate_cast<schar>(iv); }
-template<> inline schar saturate_cast<schar>(double v)       { int iv = cvRound(v); return saturate_cast<schar>(iv); }
-
-template<> inline ushort saturate_cast<ushort>(schar v)      { return (ushort)std::max((int)v, 0); }
-template<> inline ushort saturate_cast<ushort>(short v)      { return (ushort)std::max((int)v, 0); }
-template<> inline ushort saturate_cast<ushort>(int v)        { return (ushort)((unsigned)v <= (unsigned)USHRT_MAX ? v : v > 0 ? USHRT_MAX : 0); }
-template<> inline ushort saturate_cast<ushort>(unsigned v)   { return (ushort)std::min(v, (unsigned)USHRT_MAX); }
-template<> inline ushort saturate_cast<ushort>(float v)      { int iv = cvRound(v); return saturate_cast<ushort>(iv); }
-template<> inline ushort saturate_cast<ushort>(double v)     { int iv = cvRound(v); return saturate_cast<ushort>(iv); }
-
-template<> inline short saturate_cast<short>(ushort v)       { return (short)std::min((int)v, SHRT_MAX); }
-template<> inline short saturate_cast<short>(int v)          { return (short)((unsigned)(v - SHRT_MIN) <= (unsigned)USHRT_MAX ? v : v > 0 ? SHRT_MAX : SHRT_MIN); }
-template<> inline short saturate_cast<short>(unsigned v)     { return (short)std::min(v, (unsigned)SHRT_MAX); }
-template<> inline short saturate_cast<short>(float v)        { int iv = cvRound(v); return saturate_cast<short>(iv); }
-template<> inline short saturate_cast<short>(double v)       { int iv = cvRound(v); return saturate_cast<short>(iv); }
-
-template<> inline int saturate_cast<int>(float v)            { return cvRound(v); }
-template<> inline int saturate_cast<int>(double v)           { return cvRound(v); }
-
-// we intentionally do not clip negative numbers, to make -1 become 0xffffffff etc.
-template<> inline unsigned saturate_cast<unsigned>(float v)  { return cvRound(v); }
-template<> inline unsigned saturate_cast<unsigned>(double v) { return cvRound(v); }
+#define CV_Assert_N(...) do { __CV_EXPAND(__CV_CAT(CV_Assert_, __CV_VA_NUM_ARGS(__VA_ARGS__)) (__VA_ARGS__)); } while(0)
 
 //! @endcond
 
-//////////////////////////////// low-level functions ////////////////////////////////
+#if defined _DEBUG || defined CV_STATIC_ANALYSIS
+#  define CV_DbgAssert(expr) CV_Assert(expr)
+#else
+/** replaced with CV_Assert(expr) in Debug configuration */
+#  define CV_DbgAssert(expr)
+#endif
 
-CV_EXPORTS int LU(float* A, size_t astep, int m, float* b, size_t bstep, int n);
-CV_EXPORTS int LU(double* A, size_t astep, int m, double* b, size_t bstep, int n);
-CV_EXPORTS bool Cholesky(float* A, size_t astep, int m, float* b, size_t bstep, int n);
-CV_EXPORTS bool Cholesky(double* A, size_t astep, int m, double* b, size_t bstep, int n);
-
-CV_EXPORTS int normL1_(const uchar* a, const uchar* b, int n);
-CV_EXPORTS int normHamming(const uchar* a, const uchar* b, int n);
-CV_EXPORTS int normHamming(const uchar* a, const uchar* b, int n, int cellSize);
-CV_EXPORTS float normL1_(const float* a, const float* b, int n);
-CV_EXPORTS float normL2Sqr_(const float* a, const float* b, int n);
-
-CV_EXPORTS void exp(const float* src, float* dst, int n);
-CV_EXPORTS void log(const float* src, float* dst, int n);
-
-CV_EXPORTS void fastAtan2(const float* y, const float* x, float* dst, int n, bool angleInDegrees);
-CV_EXPORTS void magnitude(const float* x, const float* y, float* dst, int n);
-
-/** @brief Computes the cube root of an argument.
-
-The function cubeRoot computes \f$\sqrt[3]{\texttt{val}}\f$. Negative arguments are handled correctly.
-NaN and Inf are not handled. The accuracy approaches the maximum possible accuracy for
-single-precision data.
-@param val A function argument.
+/*
+ * Hamming distance functor - counts the bit differences between two strings - useful for the Brief descriptor
+ * bit count of A exclusive XOR'ed with B
  */
-CV_EXPORTS_W float cubeRoot(float val);
+struct CV_EXPORTS Hamming
+{
+    static const NormTypes normType = NORM_HAMMING;
+    typedef unsigned char ValueType;
+    typedef int ResultType;
 
-/** @brief Calculates the angle of a 2D vector in degrees.
+    /** this will count the bits in a ^ b
+     */
+    ResultType operator()( const unsigned char* a, const unsigned char* b, int size ) const;
+};
 
-The function fastAtan2 calculates the full-range angle of an input 2D vector. The angle is measured
-in degrees and varies from 0 to 360 degrees. The accuracy is about 0.3 degrees.
-@param x x-coordinate of the vector.
-@param y y-coordinate of the vector.
- */
-CV_EXPORTS_W float fastAtan2(float y, float x);
+typedef Hamming HammingLUT;
 
 /////////////////////////////////// inline norms ////////////////////////////////////
 
+template<typename _Tp> inline _Tp cv_abs(_Tp x) { return std::abs(x); }
+inline int cv_abs(uchar x) { return x; }
+inline int cv_abs(schar x) { return std::abs(x); }
+inline int cv_abs(ushort x) { return x; }
+inline int cv_abs(short x) { return std::abs(x); }
 
 template<typename _Tp, typename _AccTp> static inline
 _AccTp normL2Sqr(const _Tp* a, int n)
@@ -551,12 +428,12 @@ _AccTp normL1(const _Tp* a, int n)
 #if CV_ENABLE_UNROLLED
     for(; i <= n - 4; i += 4 )
     {
-        s += (_AccTp)std::abs(a[i]) + (_AccTp)std::abs(a[i+1]) +
-            (_AccTp)std::abs(a[i+2]) + (_AccTp)std::abs(a[i+3]);
+        s += (_AccTp)cv_abs(a[i]) + (_AccTp)cv_abs(a[i+1]) +
+            (_AccTp)cv_abs(a[i+2]) + (_AccTp)cv_abs(a[i+3]);
     }
 #endif
     for( ; i < n; i++ )
-        s += std::abs(a[i]);
+        s += cv_abs(a[i]);
     return s;
 }
 
@@ -565,7 +442,7 @@ _AccTp normInf(const _Tp* a, int n)
 {
     _AccTp s = 0;
     for( int i = 0; i < n; i++ )
-        s = std::max(s, (_AccTp)std::abs(a[i]));
+        s = std::max(s, (_AccTp)cv_abs(a[i]));
     return s;
 }
 
@@ -589,12 +466,9 @@ _AccTp normL2Sqr(const _Tp* a, const _Tp* b, int n)
     return s;
 }
 
-template<> inline
-float normL2Sqr(const float* a, const float* b, int n)
+static inline float normL2Sqr(const float* a, const float* b, int n)
 {
-    if( n >= 8 )
-        return normL2Sqr_(a, b, n);
-    float s = 0;
+    float s = 0.f;
     for( int i = 0; i < n; i++ )
     {
         float v = a[i] - b[i];
@@ -623,24 +497,24 @@ _AccTp normL1(const _Tp* a, const _Tp* b, int n)
     return s;
 }
 
-template<> inline
-float normL1(const float* a, const float* b, int n)
+inline float normL1(const float* a, const float* b, int n)
 {
-    if( n >= 8 )
-        return normL1_(a, b, n);
-    float s = 0;
+    float s = 0.f;
     for( int i = 0; i < n; i++ )
     {
-        float v = a[i] - b[i];
-        s += std::abs(v);
+        s += std::abs(a[i] - b[i]);
     }
     return s;
 }
 
-template<> inline
-int normL1(const uchar* a, const uchar* b, int n)
+inline int normL1(const uchar* a, const uchar* b, int n)
 {
-    return normL1_(a, b, n);
+    int s = 0;
+    for( int i = 0; i < n; i++ )
+    {
+        s += std::abs(a[i] - b[i]);
+    }
+    return s;
 }
 
 template<typename _Tp, typename _AccTp> static inline
@@ -655,6 +529,32 @@ _AccTp normInf(const _Tp* a, const _Tp* b, int n)
     return s;
 }
 
+/** @brief Computes the cube root of an argument.
+
+ The function cubeRoot computes \f$\sqrt[3]{\texttt{val}}\f$. Negative arguments are handled correctly.
+ NaN and Inf are not handled. The accuracy approaches the maximum possible accuracy for
+ single-precision data.
+ @param val A function argument.
+ */
+CV_EXPORTS_W float cubeRoot(float val);
+
+/** @brief Calculates the angle of a 2D vector in degrees.
+
+ The function fastAtan2 calculates the full-range angle of an input 2D vector. The angle is measured
+ in degrees and varies from 0 to 360 degrees. The accuracy is about 0.3 degrees.
+ @param x x-coordinate of the vector.
+ @param y y-coordinate of the vector.
+ */
+CV_EXPORTS_W float fastAtan2(float y, float x);
+
+/** proxy for hal::LU */
+CV_EXPORTS int LU(float* A, size_t astep, int m, float* b, size_t bstep, int n);
+/** proxy for hal::LU */
+CV_EXPORTS int LU(double* A, size_t astep, int m, double* b, size_t bstep, int n);
+/** proxy for hal::Cholesky */
+CV_EXPORTS bool Cholesky(float* A, size_t astep, int m, float* b, size_t bstep, int n);
+/** proxy for hal::Cholesky */
+CV_EXPORTS bool Cholesky(double* A, size_t astep, int m, double* b, size_t bstep, int n);
 
 ////////////////// forward declarations for important OpenCV types //////////////////
 
@@ -718,12 +618,23 @@ namespace cudev
 
 namespace ipp
 {
-CV_EXPORTS void setIppStatus(int status, const char * const funcname = NULL, const char * const filename = NULL,
+CV_EXPORTS   unsigned long long getIppFeatures();
+CV_EXPORTS   void setIppStatus(int status, const char * const funcname = NULL, const char * const filename = NULL,
                              int line = 0);
-CV_EXPORTS int getIppStatus();
-CV_EXPORTS String getIppErrorLocation();
-CV_EXPORTS bool useIPP();
-CV_EXPORTS void setUseIPP(bool flag);
+CV_EXPORTS   int getIppStatus();
+CV_EXPORTS   String getIppErrorLocation();
+CV_EXPORTS_W bool   useIPP();
+CV_EXPORTS_W void   setUseIPP(bool flag);
+CV_EXPORTS_W String getIppVersion();
+
+// IPP Not-Exact mode. This function may force use of IPP then both IPP and OpenCV provide proper results
+// but have internal accuracy differences which have too much direct or indirect impact on accuracy tests.
+CV_EXPORTS_W bool useIPP_NotExact();
+CV_EXPORTS_W void setUseIPP_NotExact(bool flag);
+#ifndef DISABLE_OPENCV_3_COMPATIBILITY
+static inline bool useIPP_NE() { return useIPP_NotExact(); }
+static inline void setUseIPP_NE(bool flag) { setUseIPP_NotExact(flag); }
+#endif
 
 } // ipp
 
@@ -731,89 +642,13 @@ CV_EXPORTS void setUseIPP(bool flag);
 
 //! @} core_utils
 
-//! @addtogroup core_utils_neon
-//! @{
 
-#if CV_NEON
 
-inline int32x2_t cv_vrnd_s32_f32(float32x2_t v)
-{
-    static int32x2_t v_sign = vdup_n_s32(1 << 31),
-        v_05 = vreinterpret_s32_f32(vdup_n_f32(0.5f));
-
-    int32x2_t v_addition = vorr_s32(v_05, vand_s32(v_sign, vreinterpret_s32_f32(v)));
-    return vcvt_s32_f32(vadd_f32(v, vreinterpret_f32_s32(v_addition)));
-}
-
-inline int32x4_t cv_vrndq_s32_f32(float32x4_t v)
-{
-    static int32x4_t v_sign = vdupq_n_s32(1 << 31),
-        v_05 = vreinterpretq_s32_f32(vdupq_n_f32(0.5f));
-
-    int32x4_t v_addition = vorrq_s32(v_05, vandq_s32(v_sign, vreinterpretq_s32_f32(v)));
-    return vcvtq_s32_f32(vaddq_f32(v, vreinterpretq_f32_s32(v_addition)));
-}
-
-inline uint32x2_t cv_vrnd_u32_f32(float32x2_t v)
-{
-    static float32x2_t v_05 = vdup_n_f32(0.5f);
-    return vcvt_u32_f32(vadd_f32(v, v_05));
-}
-
-inline uint32x4_t cv_vrndq_u32_f32(float32x4_t v)
-{
-    static float32x4_t v_05 = vdupq_n_f32(0.5f);
-    return vcvtq_u32_f32(vaddq_f32(v, v_05));
-}
-
-inline float32x4_t cv_vrecpq_f32(float32x4_t val)
-{
-    float32x4_t reciprocal = vrecpeq_f32(val);
-    reciprocal = vmulq_f32(vrecpsq_f32(val, reciprocal), reciprocal);
-    reciprocal = vmulq_f32(vrecpsq_f32(val, reciprocal), reciprocal);
-    return reciprocal;
-}
-
-inline float32x2_t cv_vrecp_f32(float32x2_t val)
-{
-    float32x2_t reciprocal = vrecpe_f32(val);
-    reciprocal = vmul_f32(vrecps_f32(val, reciprocal), reciprocal);
-    reciprocal = vmul_f32(vrecps_f32(val, reciprocal), reciprocal);
-    return reciprocal;
-}
-
-inline float32x4_t cv_vrsqrtq_f32(float32x4_t val)
-{
-    float32x4_t e = vrsqrteq_f32(val);
-    e = vmulq_f32(vrsqrtsq_f32(vmulq_f32(e, e), val), e);
-    e = vmulq_f32(vrsqrtsq_f32(vmulq_f32(e, e), val), e);
-    return e;
-}
-
-inline float32x2_t cv_vrsqrt_f32(float32x2_t val)
-{
-    float32x2_t e = vrsqrte_f32(val);
-    e = vmul_f32(vrsqrts_f32(vmul_f32(e, e), val), e);
-    e = vmul_f32(vrsqrts_f32(vmul_f32(e, e), val), e);
-    return e;
-}
-
-inline float32x4_t cv_vsqrtq_f32(float32x4_t val)
-{
-    return cv_vrecpq_f32(cv_vrsqrtq_f32(val));
-}
-
-inline float32x2_t cv_vsqrt_f32(float32x2_t val)
-{
-    return cv_vrecp_f32(cv_vrsqrt_f32(val));
-}
-
-#endif
-
-//! @} core_utils_neon
 
 } // cv
 
-#include "sse_utils.hpp"
+#include "opencv2/core/neon_utils.hpp"
+#include "opencv2/core/vsx_utils.hpp"
+#include "opencv2/core/check.hpp"
 
-#endif //__OPENCV_CORE_BASE_HPP__
+#endif //OPENCV_CORE_BASE_HPP
